@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vault — file drop</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#0b0d12;--panel:#12151c;--panel2:#171b24;--line:#232836;--text:#e8ebf2;--muted:#8a92a6;--accent:#7c8cff;--accent2:#b07cff;--danger:#ff6b7a;--ok:#4ade80}
+html{scroll-padding-top:env(safe-area-inset-top,0px);height:100%}
+*,*:before,*:after{box-sizing:border-box}
+body{margin:0;min-height:100%;background:radial-gradient(900px 500px at 80% -10%,#1c2140 0%,transparent 60%),var(--bg);color:var(--text);font:15px/1.5 Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:40px 20px 80px}
+h1{font-size:28px;margin:0 0 4px;letter-spacing:-.02em}
+h1 span{background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{color:var(--muted);margin:0 0 28px}
+#drop{border:1.5px dashed #323a52;background:var(--panel);border-radius:18px;padding:38px 20px;text-align:center;cursor:pointer;transition:.15s}
+#drop:hover,#drop.over{border-color:var(--accent);background:#151a2b;box-shadow:0 0 0 4px #7c8cff18}
+#drop b{display:block;font-size:17px;margin:10px 0 2px}
+#drop small{color:var(--muted)}
+.ico{width:44px;height:44px;margin:auto;border-radius:12px;display:grid;place-items:center;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:22px}
+.meter{margin:14px 2px 0;font-size:12px;color:var(--muted);display:flex;gap:10px;align-items:center}
+.meter i{flex:1;height:4px;background:var(--line);border-radius:4px;overflow:hidden}
+.meter i u{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:34px 2px 12px;font-weight:600}
+.item{display:flex;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px}
+.item:hover{background:var(--panel2)}
+.ext{flex:none;width:42px;height:42px;border-radius:10px;background:#1d2232;color:var(--accent);display:grid;place-items:center;font-size:11px;font-weight:700;text-transform:uppercase;overflow:hidden}
+.info{flex:1;min-width:0}
+.name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.meta{color:var(--muted);font-size:12.5px}
+.bar{height:4px;background:var(--line);border-radius:4px;margin-top:7px;overflow:hidden}
+.bar u{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .2s}
+button{font:inherit;color:var(--text);background:#1e2333;border:1px solid var(--line);border-radius:10px;padding:8px 14px;cursor:pointer;transition:.12s}
+button:hover{border-color:var(--accent);background:#242a40}
+button.dl{background:linear-gradient(135deg,var(--accent),var(--accent2));border:0;color:#fff;font-weight:600}
+button.dl:hover{filter:brightness(1.1)}
+button.del{padding:8px 10px;color:var(--muted)}
+button.del:hover{color:var(--danger);border-color:var(--danger)}
+button:disabled{opacity:.5;cursor:default}
+.empty{text-align:center;color:var(--muted);padding:34px 0;border:1px solid var(--line);border-radius:14px;background:var(--panel)}
+#toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);background:#1b2030;border:1px solid var(--line);padding:10px 16px;border-radius:12px;opacity:0;pointer-events:none;transition:.2s;max-width:90vw;font-size:14px}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#toast.err{border-color:var(--danger)}
+.note{color:var(--muted);font-size:12.5px;margin-top:22px}
+@media(max-width:520px){.item{flex-wrap:wrap}.item .acts{width:100%;display:flex;gap:8px}.item .acts .dl{flex:1}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><span>Vault</span> file drop</h1>
+  <p class="sub">Drop any file in. It shows up here on every device — download it anywhere.</p>
+
+  <div id="drop" tabindex="0">
+    <div class="ico">↑</div>
+    <b>Drop files here or click to browse</b>
+    <small>Any file type · multiple files OK</small>
+    <input id="pick" type="file" multiple hidden>
+  </div>
+  <div class="meter"><span id="usage">Storage…</span><i><u id="ubar"></u></i></div>
+
+  <h2>Uploading</h2>
+  <div id="queue"></div>
+
+  <h2>Stored files <span id="count"></span></h2>
+  <div id="list"><div class="empty">Loading…</div></div>
+
+  <p class="note" id="note"></p>
+</div>
+<div id="toast"></div>
+
+<script>
+const CHUNK = 12 * 1024 * 1024; // raw bytes per stored chunk (base64 → ≤16 MiB text)
+const SAVE_EXT = "gif png jpg jpeg webp mp4 webm txt json md docx pptx epub csv ttf html svg pdf xlsx zip".split(" ");
+let assets = null, db = null, downloads = null, files = null;
+const $ = id => document.getElementById(id);
+
+function toast(msg, err){const t=$("toast");t.textContent=msg;t.className="show"+(err?" err":"");clearTimeout(toast.t);toast.t=setTimeout(()=>t.className="",3800)}
+function fmt(n){if(n<1024)return n+" B";const u=["KB","MB","GB","TB"];let i=-1;do{n/=1024;i++}while(n>=1024&&i<3);return n.toFixed(n<10?1:0)+" "+u[i]}
+function extOf(n){const m=/\.([A-Za-z0-9]{1,5})$/.exec(n);return m?m[1]:"file"}
+function mk(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
+
+function readB64(blob){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]||"");r.onerror=()=>rej(r.error);r.readAsDataURL(blob)})}
+function b64ToBytes(s){const bin=atob(s),n=bin.length,out=new Uint8Array(n);for(let i=0;i<n;i++)out[i]=bin.charCodeAt(i);return out}
+
+async function refreshUsage(){
+  if(!assets)return;
+  try{const {usage}=await assets.list();
+    $("usage").textContent=`${fmt(usage.bytes)} of ${fmt(usage.maxBytes)} used`;
+    $("ubar").style.width=Math.min(100,usage.bytes/usage.maxBytes*100)+"%";
+  }catch(e){$("usage").textContent=""}
+}
+
+async function uploadOne(file){
+  const row=mk("div","item"), ext=mk("div","ext",extOf(file.name)), info=mk("div","info");
+  info.append(mk("div","name",file.name));
+  const meta=mk("div","meta",fmt(file.size)+" · uploading…"), bar=mk("div","bar"), fill=mk("u");
+  bar.append(fill); info.append(meta,bar); row.append(ext,info); $("queue").prepend(row);
+  const ids=[];
+  try{
+    if(file.size===0)throw {message:"Empty files can't be stored"};
+    const n=Math.ceil(file.size/CHUNK);
+    for(let i=0;i<n;i++){
+      const b64=await readB64(file.slice(i*CHUNK,(i+1)*CHUNK));
+      let r;
+      try{r=await assets.upload(new Blob([b64],{type:"text/plain"}),{type:"text/plain"})}
+      catch(e){if(e.code==="store_unavailable"){await new Promise(z=>setTimeout(z,1200));r=await assets.upload(new Blob([b64],{type:"text/plain"}),{type:"text/plain"})}else throw e}
+      ids.push(r.id); fill.style.width=((i+1)/n*100)+"%";
+    }
+    await db.collection("files").add({name:file.name,size:file.size,type:file.type||"",chunks:ids,created:Date.now()});
+    toast("Uploaded "+file.name);
+  }catch(e){
+    for(const id of ids){try{await assets.delete(id)}catch(_){}}
+    const msg=e.code==="quota_or_state"||e.code==="too_large"?"Storage limit reached":(e.message||"Upload failed");
+    toast(file.name+": "+msg,true);
+  }finally{row.remove();refreshUsage();updQueue()}
+}
+function updQueue(){document.querySelector("h2").style.display=$("queue").children.length?"":"none";$("queue").style.display=$("queue").children.length?"":"none"}
+
+async function handleFiles(list){
+  if(!assets||!db){toast("Uploading isn't available in this view",true);return}
+  for(const f of Array.from(list)){await uploadOne(f)}
+}
+
+async function download(d,btn){
+  const old=btn.textContent;btn.disabled=true;
+  try{
+    const parts=[];
+    for(let i=0;i<d.chunks.length;i++){
+      btn.textContent=`Fetching ${i+1}/${d.chunks.length}…`;
+      const r=await fetch("/_blob/"+d.chunks[i]);
+      if(!r.ok)throw {message:"File data is missing"};
+      parts.push(b64ToBytes(await r.text()));
+    }
+    const blob=new Blob(parts);
+    let name=d.name;
+    if(!SAVE_EXT.includes(extOf(name).toLowerCase()))name+=".txt";
+    await downloads.save({filename:name,data:blob});
+    if(name!==d.name)toast(`Saved as ${name} — remove the ".txt" to restore it`);
+  }catch(e){
+    if(e&&e.code==="declined"){}else toast((e&&e.message)||"Download failed",true);
+  }finally{btn.textContent=old;btn.disabled=false}
+}
+
+async function remove(id,d){
+  if(!confirm(`Delete "${d.name}" for everyone?`))return;
+  try{
+    await db.doc("files/"+id).delete();
+    for(const c of d.chunks){try{await assets.delete(c)}catch(_){}}
+    toast("Deleted");refreshUsage();
+  }catch(e){toast(e.message||"Delete failed",true)}
+}
+
+function render(snap){
+  const list=$("list");list.textContent="";
+  $("count").textContent=snap.size?`(${snap.size})`:"";
+  if(snap.empty){list.append(mk("div","empty","No files yet. Upload one above."));return}
+  snap.docs.forEach(s=>{
+    const d=s.data();
+    const row=mk("div","item"), info=mk("div","info"), acts=mk("div","acts");
+    row.append(mk("div","ext",extOf(d.name)));
+    info.append(mk("div","name",d.name),mk("div","meta",`${fmt(d.size)} · ${new Date(d.created).toLocaleString()}`));
+    row.append(info);
+    const b=mk("button","dl","Download");
+    if(downloads)b.onclick=()=>download(d,b);else b.disabled=true;
+    acts.append(b);
+    if(assets){const x=mk("button","del","✕");x.title="Delete";x.onclick=()=>remove(s.id,d);acts.append(x)}
+    row.append(acts);list.append(row);
+  });
+}
+
+async function init(){
+  updQueue();
+  const drop=$("drop"),pick=$("pick");
+  drop.onclick=()=>pick.click();
+  drop.onkeydown=e=>{if(e.key==="Enter"||e.key===" ")pick.click()};
+  pick.onchange=()=>{handleFiles(pick.files);pick.value=""};
+  ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over")}));
+  ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over")}));
+  drop.addEventListener("drop",e=>handleFiles(e.dataTransfer.files));
+  window.addEventListener("dragover",e=>e.preventDefault());
+  window.addEventListener("drop",e=>e.preventDefault());
+
+  const [a,d,dl]=await Promise.all([claude.use("assets"),claude.use("db"),claude.use("downloads")].map(p=>p.catch(()=>null)));
+  assets=a;db=d;downloads=dl;
+  if(!db){$("list").textContent="";$("list").append(mk("div","empty","Open this page signed in to claude.ai to see the files."));return}
+  if(!assets){drop.style.display="none";$("note").textContent="You have view-only access: you can see and download files but not upload."}
+  else $("note").textContent="Each file is stored in the artifact's own storage (20 MB per piece, large files are split automatically). Anyone with access to this page can see, download and delete the files.";
+  db.collection("files").orderBy("created","desc").onSnapshot(render,e=>{$("list").textContent="";$("list").append(mk("div","empty","Couldn't load files: "+(e.message||e.code)))});
+  refreshUsage();
+}
+(function wait(){if(window.claude&&claude.use)init();else setTimeout(wait,100)})();
+</script>
+</body>
+</html>
