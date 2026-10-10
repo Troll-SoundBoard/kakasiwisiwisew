@@ -103,7 +103,7 @@ async function uploadOne(file) {
     await upload(`${Date.now()}-${file.name}`, file, {
       access: "public",
       handleUploadUrl: "/api/upload",
-      multipart: true,
+      multipart: false,
       onUploadProgress: ({ percentage }) => (fill.style.width = percentage + "%"),
     });
     toast("Uploaded " + file.name);
