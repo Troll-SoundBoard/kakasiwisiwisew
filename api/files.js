@@ -1,9 +1,6 @@
 import { list, del } from "@vercel/blob";
 
 export default async function handler(req, res) {
-  if (req.headers["x-password"] !== process.env.APP_PASSWORD)
-    return res.status(401).json({ error: "Wrong password" });
-
   try {
     if (req.method === "GET") {
       const { blobs } = await list({ limit: 1000 });
