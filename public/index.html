@@ -64,12 +64,8 @@ const ext = (n) => (/\.([A-Za-z0-9]{1,5})$/.exec(n) || [, "file"])[1];
 const fmt = (n) => { if (n < 1024) return n + " B"; const u = ["KB","MB","GB","TB"]; let i = -1; do { n /= 1024; i++; } while (n >= 1024 && i < 3); return n.toFixed(n < 10 ? 1 : 0) + " " + u[i]; };
 function toast(m, err) { const t = $("toast"); t.textContent = m; t.className = "show" + (err ? " err" : ""); clearTimeout(toast.t); toast.t = setTimeout(() => (t.className = ""), 3500); }
 
-let pw = localStorage.getItem("vault-pw") || "";
-function askPw() { pw = prompt("Password:") || ""; localStorage.setItem("vault-pw", pw); }
-
 async function api(url, opts = {}) {
-  const r = await fetch(url, { ...opts, headers: { "x-password": pw } });
-  if (r.status === 401) { askPw(); throw new Error("Wrong password"); }
+  const r = await fetch(url, opts);
   const j = await r.json();
   if (!r.ok) throw new Error(j.error || "Request failed");
   return j;
@@ -107,13 +103,11 @@ async function uploadOne(file) {
     await upload(`${Date.now()}-${file.name}`, file, {
       access: "public",
       handleUploadUrl: "/api/upload",
-      clientPayload: pw,
       multipart: true,
       onUploadProgress: ({ percentage }) => (fill.style.width = percentage + "%"),
     });
     toast("Uploaded " + file.name);
   } catch (e) {
-    if (/password/i.test(e.message)) askPw();
     toast(`${file.name}: ${e.message}`, true);
   } finally {
     row.remove(); if (!$("queue").children.length) $("qwrap").hidden = true;
@@ -131,7 +125,6 @@ drop.addEventListener("drop", (e) => go(e.dataTransfer.files));
 addEventListener("dragover", (e) => e.preventDefault());
 addEventListener("drop", (e) => e.preventDefault());
 
-if (!pw) askPw();
 refresh();
 </script>
 </body>
