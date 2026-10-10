@@ -5,10 +5,7 @@ export default async function handler(req, res) {
     const json = await handleUpload({
       body: req.body,
       request: req,
-      onBeforeGenerateToken: async (pathname, clientPayload) => {
-        if (clientPayload !== process.env.APP_PASSWORD) throw new Error("Wrong password");
-        return { addRandomSuffix: true };
-      },
+      onBeforeGenerateToken: async () => ({ addRandomSuffix: true }),
       onUploadCompleted: async () => {},
     });
     res.status(200).json(json);
