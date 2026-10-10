@@ -2,5 +2,5 @@
   "name": "vault",
   "private": true,
   "type": "module",
-  "dependencies": { "@vercel/blob": "^1.1.1" }
+  "dependencies": { "@vercel/blob": "^2.3.0" }
 }
